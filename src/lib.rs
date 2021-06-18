@@ -1,10 +1,10 @@
 use std::thread;
+use std::marker::PhantomData;
 use std::sync::{Arc, atomic::AtomicBool, atomic::Ordering};
 use std::convert::TryInto;
 use zbus::{dbus_interface, fdo};
 
 use rust_raspi_led_strip::LEDStrip;
-use rust_raspi_led_strip::TalkingLED;
 
 // TODO: Interface with actual LED controls
 struct BlinkService<T>
@@ -15,43 +15,62 @@ struct BlinkService<T>
 }
 
 impl<T: LEDStrip> BlinkService<T> {
-    pub fn new(mut leds: T) -> Self {
+    pub fn new(leds: T) -> Self {
         Self {
             leds: leds
         }
     }
 }
 
+// Expose calls as DBus Interface 
 #[dbus_interface(name = "org.zbus.BlinkService1")]
 impl<T: 'static + LEDStrip> BlinkService<T> {
-    // TODO: Expose LED functions
-    fn set_state(&mut self, state: u8) -> () {
-        println!("Received set_state: {}", state);
-        //self.state = state;
+    fn set_all(&mut self, r: u8, g: u8, b: u8, brightness: f32)
+    {
+        self.leds.set_all(r, g, b, brightness)
     }
-    fn get_state(&mut self) -> u8 {
-        println!("Received get_state");
-        //self.state
-        0
+
+    fn set_pixel(&mut self, x: u32, r: u8, g: u8, b: u8, brightness: f32)
+    {
+        self.leds.set_pixel(x as usize, r, g, b, brightness)
+    }
+
+    fn set_brightness(&mut self, brightness: f32)
+    {
+        self.leds.set_brightness(brightness)
+    }
+
+    fn clear(&mut self)
+    {
+        self.leds.clear()
+    }
+
+    fn show(&mut self)
+    {
+        self.leds.show().unwrap();
     }
 }
 
-pub struct BlinkDbusService
+pub struct BlinkDbusService<T>
 {
     handle: Option<thread::JoinHandle<()>>,
     alive: Arc<AtomicBool>,
+    ignore: PhantomData<T>,
 }
 
-impl BlinkDbusService
-{
+impl<T: 'static + LEDStrip> BlinkDbusService<T> {
     pub fn new() -> Self {
         Self {
             handle: None,
             alive: Arc::new(AtomicBool::new(false)),
+            ignore: PhantomData,
         }
     }
 
-    pub fn start(&mut self) -> () {
+    pub fn start(&mut self, leds: T)
+        where
+            T: Send
+    {
         let alive = self.alive.clone();
 
         self.handle = Some(std::thread::spawn(move || {
@@ -63,7 +82,7 @@ impl BlinkDbusService
             ).unwrap();
 
             let mut object_server = zbus::ObjectServer::new(&connection);
-            let service = BlinkService::<TalkingLED>::new(TalkingLED::new());
+            let service = BlinkService::<T>::new(leds);
 
             object_server.at(&"/org/zbus/BlinkService".try_into().unwrap(), service).unwrap();
 
@@ -76,7 +95,7 @@ impl BlinkDbusService
         }));
     }
 
-    pub fn stop(&mut self) -> () {
+    pub fn stop(&mut self) {
         self.alive.store(false, Ordering::SeqCst);
         // TODO: Send request to Server to iniialize thread termination. Since the Server is
         //       blocking :(
@@ -90,12 +109,13 @@ impl BlinkDbusService
 mod tests {
     use super::*;
     use std::time;
+    use rust_raspi_led_strip::TalkingLED;
 
     #[test]
     fn server_lifetime() {
-        let mut srv = BlinkDbusService::new();
-        srv.start();
-        thread::sleep(time::Duration::from_millis(5000));
+        let mut srv = BlinkDbusService::<TalkingLED>::new();
+        srv.start(TalkingLED::new());
+        thread::sleep(time::Duration::from_millis(60000));
         srv.stop();
     }
 }
