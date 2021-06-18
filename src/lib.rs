@@ -3,10 +3,8 @@ use std::marker::PhantomData;
 use std::sync::{Arc, atomic::AtomicBool, atomic::Ordering};
 use std::convert::TryInto;
 use zbus::{dbus_interface, fdo};
-
 use rust_raspi_led_strip::LEDStrip;
 
-// TODO: Interface with actual LED controls
 struct BlinkService<T>
     where
         T: LEDStrip,
@@ -72,6 +70,7 @@ impl<T: 'static + LEDStrip> BlinkDbusService<T> {
             T: Send
     {
         let alive = self.alive.clone();
+        alive.store(true, Ordering::SeqCst);
 
         self.handle = Some(std::thread::spawn(move || {
             let connection = zbus::Connection::new_session().unwrap();
@@ -86,7 +85,6 @@ impl<T: 'static + LEDStrip> BlinkDbusService<T> {
 
             object_server.at(&"/org/zbus/BlinkService".try_into().unwrap(), service).unwrap();
 
-            alive.store(true, Ordering::SeqCst);
             while alive.load(Ordering::SeqCst) {
                 if let Err(err) = object_server.try_handle_next() {
                     eprintln!("{}", err);
@@ -115,7 +113,7 @@ mod tests {
     fn server_lifetime() {
         let mut srv = BlinkDbusService::<TalkingLED>::new();
         srv.start(TalkingLED::new());
-        thread::sleep(time::Duration::from_millis(60000));
+        thread::sleep(time::Duration::from_millis(5000));
         srv.stop();
     }
 }
