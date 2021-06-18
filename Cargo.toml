@@ -8,4 +8,4 @@ edition = "2018"
 
 [dependencies]
 zbus = "1.9.1"
-rust_raspi_led_strpi = { git = "https://github.com/ziemann-sebastian/rust-raspi-led-strpi.git", branch = "main", package = "rust-raspi-led-strpi" }
+rust_raspi_led_strip = { git = "https://github.com/ziemann-sebastian/rust-raspi-led-strip.git", branch = "main" }

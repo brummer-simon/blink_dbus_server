@@ -3,8 +3,8 @@ use std::sync::{Arc, atomic::AtomicBool, atomic::Ordering};
 use std::convert::TryInto;
 use zbus::{dbus_interface, fdo};
 
-use rust_raspi_led_strpi::ledstrip::LEDStrip;
-use rust_raspi_led_strpi::talking_led::TalkingLED; 
+use rust_raspi_led_strip::LEDStrip;
+use rust_raspi_led_strip::TalkingLED;
 
 // TODO: Interface with actual LED controls
 struct BlinkService<T>
@@ -14,7 +14,7 @@ struct BlinkService<T>
     leds: T
 }
 
-impl<T> BlinkService<T> {
+impl<T: LEDStrip> BlinkService<T> {
     pub fn new(mut leds: T) -> Self {
         Self {
             leds: leds
@@ -23,7 +23,8 @@ impl<T> BlinkService<T> {
 }
 
 #[dbus_interface(name = "org.zbus.BlinkService1")]
-impl<T> BlinkService<T> {
+impl<T: 'static + LEDStrip> BlinkService<T> {
+    // TODO: Expose LED functions
     fn set_state(&mut self, state: u8) -> () {
         println!("Received set_state: {}", state);
         //self.state = state;
@@ -31,18 +32,17 @@ impl<T> BlinkService<T> {
     fn get_state(&mut self) -> u8 {
         println!("Received get_state");
         //self.state
+        0
     }
 }
 
-pub struct BlinkDbusService<T>
-    where
-        T: LEDStrip,
+pub struct BlinkDbusService
 {
     handle: Option<thread::JoinHandle<()>>,
     alive: Arc<AtomicBool>,
 }
 
-impl<T> BlinkDbusService<T>
+impl BlinkDbusService
 {
     pub fn new() -> Self {
         Self {
@@ -63,7 +63,7 @@ impl<T> BlinkDbusService<T>
             ).unwrap();
 
             let mut object_server = zbus::ObjectServer::new(&connection);
-            let service = BlinkService::<T>::new();
+            let service = BlinkService::<TalkingLED>::new(TalkingLED::new());
 
             object_server.at(&"/org/zbus/BlinkService".try_into().unwrap(), service).unwrap();
 
@@ -93,7 +93,7 @@ mod tests {
 
     #[test]
     fn server_lifetime() {
-        let mut srv = BlinkDbusService::<TalkingLED>::new();
+        let mut srv = BlinkDbusService::new();
         srv.start();
         thread::sleep(time::Duration::from_millis(5000));
         srv.stop();
